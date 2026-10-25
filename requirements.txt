@@ -1,0 +1,4 @@
+numpy
+pillow
+matplotlib
+tensorflow>=2.16   # or: tflite-runtime (inference only, run_demo.py falls back to it)
