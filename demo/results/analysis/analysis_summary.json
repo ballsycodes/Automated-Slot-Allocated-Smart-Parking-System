@@ -1,0 +1,70 @@
+{
+  "images": 31825,
+  "float_accuracy": 0.9807,
+  "int8_accuracy": 0.9801,
+  "float_int8_agreement": 0.9966,
+  "per_weather": {
+    "OVERCAST": {
+      "images": 6365,
+      "accuracy": 0.9914
+    },
+    "RAINY": {
+      "images": 12860,
+      "accuracy": 0.9714
+    },
+    "SUNNY": {
+      "images": 12600,
+      "accuracy": 0.9834
+    }
+  },
+  "per_camera": {
+    "camera1": {
+      "images": 3430,
+      "accuracy": 0.9557
+    },
+    "camera2": {
+      "images": 891,
+      "accuracy": 0.982
+    },
+    "camera3": {
+      "images": 2100,
+      "accuracy": 0.9814
+    },
+    "camera4": {
+      "images": 3700,
+      "accuracy": 0.99
+    },
+    "camera5": {
+      "images": 4600,
+      "accuracy": 0.9915
+    },
+    "camera6": {
+      "images": 4356,
+      "accuracy": 0.9876
+    },
+    "camera7": {
+      "images": 4600,
+      "accuracy": 0.9659
+    },
+    "camera8": {
+      "images": 5292,
+      "accuracy": 0.9894
+    },
+    "camera9": {
+      "images": 2856,
+      "accuracy": 0.9713
+    }
+  },
+  "robustness_int8": {
+    "subset_images": 4000,
+    "accuracy": {
+      "original": 0.9828,
+      "shift_x_10px": 0.981,
+      "shift_y_10px": 0.9633,
+      "rotate_5deg": 0.7905,
+      "zoom_in_10pct": 0.98,
+      "brightness_x0.6": 0.9635,
+      "brightness_x1.4": 0.9663
+    }
+  }
+}
