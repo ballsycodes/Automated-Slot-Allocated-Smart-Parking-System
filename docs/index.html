@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smart Parking TinyML - Team 79</title>
+<meta name="description" content="Automated Slot-Allocated Smart Parking System: on-device TinyML parking-slot detection on ESP32-S3.">
+<style>
+  :root { --bg:#fff; --fg:#1c1b1f; --muted:#5f5b66; --card:#f6f3f4; --line:#e3dde0; --accent:#a4123f; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#141214; --fg:#ece8ea; --muted:#a9a2a7; --card:#1f1c1f; --line:#322d31; --accent:#e0577f; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  a { color:var(--accent); }
+  .wrap { max-width:980px; margin:0 auto; padding:0 16px; }
+  header { border-bottom:1px solid var(--line); }
+  header .wrap { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 24px; padding-top:14px; padding-bottom:14px; }
+  header strong { color:var(--accent); }
+  nav a { margin-right:14px; text-decoration:none; font-size:14px; color:var(--muted); }
+  nav a:hover { color:var(--accent); }
+  .hero { padding:44px 0 28px; }
+  h1 { font-size:clamp(28px,5vw,42px); line-height:1.15; margin:0 0 12px; }
+  h2 { font-size:24px; margin:0 0 14px; padding-top:8px; }
+  h3 { font-size:17px; margin:18px 0 6px; }
+  p { margin:0 0 12px; }
+  .lead { font-size:18px; color:var(--muted); max-width:720px; }
+  section { padding:30px 0; border-top:1px solid var(--line); }
+  .grid { display:grid; gap:14px; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+  .stat { font-size:26px; font-weight:700; color:var(--accent); line-height:1.2; }
+  .stat small { display:block; font-size:13px; font-weight:400; color:var(--muted); }
+  table { border-collapse:collapse; width:100%; font-size:15px; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  .tablewrap { overflow-x:auto; }
+  .tag { display:inline-block; font-size:12px; padding:1px 8px; border-radius:99px; border:1px solid var(--line); background:var(--card); }
+  .done { color:#1a7f37; } .plan { color:#9a6700; }
+  @media (prefers-color-scheme: dark) { .done { color:#56d364; } .plan { color:#e3b341; } }
+  video, img { max-width:100%; border-radius:8px; border:1px solid var(--line); background:#000; }
+  .videos { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); }
+  pre { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px 14px; overflow-x:auto; font-size:14px; }
+  code { font-family:ui-monospace,Consolas,monospace; font-size:.92em; }
+  ol, ul { padding-left:22px; margin:0 0 12px; }
+  .flow { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:10px 0 14px; }
+  .flow span { background:var(--card); border:1px solid var(--line); border-radius:6px; padding:4px 10px; font-size:14px; }
+  .flow i { color:var(--muted); font-style:normal; }
+  footer { border-top:1px solid var(--line); padding:22px 0 40px; color:var(--muted); font-size:14px; }
+  .note { border-left:3px solid var(--accent); padding:8px 14px; background:var(--card); border-radius:0 8px 8px 0; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <strong>Team 79 &middot; Smart Parking TinyML</strong>
+    <nav>
+      <a href="#problem">Problem</a><a href="#method">Methodology</a><a href="#progress">Progress</a>
+      <a href="#demo">Demo</a><a href="#docs">Docs</a><a href="#team">Team</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="hero">
+    <p class="tag">Application Project &middot; Project Phase II &middot; Amrita Vishwa Vidyapeetham, Coimbatore</p>
+    <h1>Automated Slot-Allocated Smart Parking System</h1>
+    <p class="lead">A camera on an ESP32-S3 decides whether a parking slot is <b>empty</b> or <b>occupied</b> entirely on the device, using a 33 KB INT8 neural network, and shows the answer on its own web dashboard. No cloud, no per-slot sensors.</p>
+    <p><a href="https://github.com/ballsycodes/Automated-Slot-Allocated-Smart-Parking-System">GitHub repository</a> &middot; Guide: Dr. R. Karthi, Department of CSE</p>
+  </div>
+
+  <section id="objectives">
+    <h2>Objectives</h2>
+    <ul>
+      <li>Detect slot occupancy with low-cost hardware instead of one ultrasonic/IR sensor per slot.</li>
+      <li>Run inference at the edge (TinyML), so the system keeps working without internet.</li>
+      <li>Allocate slots intelligently: near the entrance, near the lift, and without clustering cars in one row.</li>
+      <li>Serve users through a web page and SMS - no app installation.</li>
+    </ul>
+  </section>
+
+  <section id="problem">
+    <h2>Problem statement</h2>
+    <p>Drivers lose time and fuel searching for parking, and entrances congest because slots are filled first-come, first-served. Existing smart-parking systems either need a sensor per slot (expensive to wire at scale), heavy computer vision such as YOLO or ANPR (needs strong hardware and good lighting), or a constant internet connection.</p>
+    <p>We target a middle path: a cheap camera node that runs a tiny classifier locally, combined with a backend that decides <em>which</em> slot to give each driver.</p>
+  </section>
+
+  <section id="method">
+    <h2>Methodology</h2>
+    <h3>1. Occupancy model</h3>
+    <div class="flow"><span>Camera frame (RGB565)</span><i>&rarr;</i><span>Resize 150&times;150</span><i>&rarr;</i><span>RGB888</span><i>&rarr;</i><span>INT8 input</span><i>&rarr;</i><span>CNN (TFLite Micro)</span><i>&rarr;</i><span>Dequantize</span><i>&rarr;</i><span>EMPTY / OCCUPIED</span></div>
+    <p>CNN: Conv16 &rarr; MaxPool &rarr; Conv32 &rarr; MaxPool &rarr; Conv64 &rarr; GlobalAvgPool &rarr; Dense32 &rarr; Dropout &rarr; Dense2. 25,730 parameters. Trained in Keras on the public <b>CNRPark+EXT</b> dataset (balanced 20,000-image subset, augmentation for small camera shifts), converted to an INT8 TensorFlow Lite model, embedded in the firmware as a C array.</p>
+    <h3>2. Allocation (designed)</h3>
+    <p>Each free slot gets a score; the lowest wins:</p>
+    <pre><code>Score(s) = w1 * D_entrance(s) + w2 * D_lift(s) + w3 * (row_occupancy + alpha * recent_allocations_in_row)</code></pre>
+    <p>The congestion term spreads consecutive cars across rows. Weights sum to 1.</p>
+    <h3>3. System architecture (planned)</h3>
+    <div class="flow"><span>ESP32-S3 camera nodes</span><i>&rarr; LoRa &rarr;</i><span>Raspberry Pi 3A+ (Flask, SQLite, QR, allocation)</span><i>&rarr;</i><span>SMS / web page</span><i>&rarr;</i><span>Supabase sync</span></div>
+    <p>Wrong parking is flagged with a time-window rule: if the assigned slot stays empty while another slot becomes occupied shortly after an entry, the entry is matched to that slot and the driver is asked to confirm.</p>
+  </section>
+
+  <section id="progress">
+    <h2>Project progress</h2>
+    <div class="grid">
+      <div class="card"><div class="stat">98.01%<small>INT8 accuracy, CNR-EXT test split (31,825 images)</small></div></div>
+      <div class="card"><div class="stat">33.24 KB<small>INT8 model (FP32 about 100.5 KB)</small></div></div>
+      <div class="card"><div class="stat">~497 ms<small>on-device inference, ESP32-S3</small></div></div>
+      <div class="card"><div class="stat">25,730<small>parameters</small></div></div>
+    </div>
+    <p></p>
+    <div class="tablewrap"><table>
+      <tr><th>Component</th><th>Status</th></tr>
+      <tr><td>CNN training, INT8 conversion</td><td class="done">Done</td></tr>
+      <tr><td>ESP32-S3 camera capture + on-device inference</td><td class="done">Done</td></tr>
+      <tr><td>Access-point web dashboard (prediction, confidence, timings)</td><td class="done">Done</td></tr>
+      <tr><td>Per-slot ROI, retraining on campus images</td><td class="plan">Planned</td></tr>
+      <tr><td>LoRa link, Raspberry Pi backend, QR entry, SMS</td><td class="plan">Planned</td></tr>
+      <tr><td>Allocation + wrong-parking logic (implementation)</td><td class="plan">Designed, not yet implemented</td></tr>
+    </table></div>
+    <p></p>
+    <p class="note"><b>Limitations.</b> A synthetic 5&deg; rotation drops accuracy to about 79%, while shifts and brightness changes cost under 2 points. Accuracy is measured on CNR-EXT patches, not on our campus lot. The demo currently classifies the whole frame, so people or objects in view can be called "occupied"; per-slot cropping and campus training data are the next step. Dashboard startup on a power bank is still being debugged.</p>
+  </section>
+
+  <section id="demo">
+    <h2>Demonstration</h2>
+    <div class="videos">
+      <figure><video controls preload="metadata" src="assets/Occupied_LOT.mp4"></video><figcaption>Prototype pointed at an occupied lot</figcaption></figure>
+      <figure><video controls preload="metadata" src="assets/Empty_LOT.mp4"></video><figcaption>Prototype pointed at an empty lot</figcaption></figure>
+    </div>
+    <h3>Sample outputs from the deployed INT8 model</h3>
+    <p><img src="assets/sample_predictions.png" alt="Grid of CNR-EXT test patches with predicted EMPTY or OCCUPIED labels"></p>
+    <h3>Run it yourself (no hardware)</h3>
+<pre><code>git clone https://github.com/ballsycodes/Automated-Slot-Allocated-Smart-Parking-System
+cd Automated-Slot-Allocated-Smart-Parking-System
+pip install -r requirements.txt
+python demo/run_demo.py</code></pre>
+    <p>This regenerates <code>demo/results/metrics_samples.json</code> and <code>sample_predictions.png</code>. Passing <code>--dataset</code> evaluates the full test split.</p>
+  </section>
+
+  <section id="docs">
+    <h2>Documentation</h2>
+    <ul>
+      <li><a href="assets/paper.pdf">Research paper draft (PDF)</a> - method, evaluation, limitations</li>
+      <li><a href="https://github.com/ballsycodes/Automated-Slot-Allocated-Smart-Parking-System#readme">README</a> - overview, status, hardware setup, training steps</li>
+      <li><a href="https://github.com/ballsycodes/Automated-Slot-Allocated-Smart-Parking-System/tree/main/demo">demo/</a> - run-based demo, results, videos</li>
+      <li><a href="https://github.com/ballsycodes/Automated-Slot-Allocated-Smart-Parking-System/tree/main/firmware">firmware/</a> - ESP32-S3 Arduino sketches</li>
+      <li><a href="https://github.com/ballsycodes/Automated-Slot-Allocated-Smart-Parking-System/tree/main/training">training/</a> - dataset checks, training, TFLite conversion</li>
+    </ul>
+    <p><b>Hardware:</b> ESP32-S3-WROOM-1 N16R8 board with OV3660 camera; Raspberry Pi 3A+ planned for the backend.</p>
+  </section>
+
+  <section id="team">
+    <h2>Team 79</h2>
+    <div class="tablewrap"><table>
+      <tr><th>Name</th><th>Register no.</th><th>Contribution</th></tr>
+      <tr><td>Druva Teja</td><td>CB.SC.U4CSE23317</td><td>CNN model, quantization, TinyML pipeline</td></tr>
+      <tr><td>Sai Jeevan</td><td>CB.SC.U4CSE23124</td><td>ESP32-S3 hardware, camera, dashboard</td></tr>
+      <tr><td>Manish Sakamuri</td><td>CB.SC.U4CSE23125</td><td>System architecture, IoT integration</td></tr>
+      <tr><td>Tejeswara D</td><td>CB.SC.U4CSE23614</td><td>Allocation algorithm, backend design</td></tr>
+    </table></div>
+    <p></p>
+    <p>Guide: Dr. R. Karthi, Department of CSE, Amrita School of Computing, Coimbatore.</p>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">Dataset: CNRPark+EXT (Amato et al.). Code released under the MIT license.</div>
+</footer>
+</body>
+</html>
