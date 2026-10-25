@@ -1,0 +1,31 @@
+{
+  "evaluated_on": "60 bundled CNR-EXT test patches (30 empty, 30 occupied)",
+  "images": 60,
+  "accuracy": 1.0,
+  "precision_occupied": 1.0,
+  "recall_occupied": 1.0,
+  "f1_occupied": 1.0,
+  "confusion_matrix": {
+    "true_empty": {
+      "pred_empty": 30,
+      "pred_occupied": 0
+    },
+    "true_occupied": {
+      "pred_empty": 0,
+      "pred_occupied": 30
+    }
+  },
+  "pc_inference_ms_mean": 0.703,
+  "model_file": "parking_cnn_150_int8.tflite",
+  "model_size_bytes": 34040,
+  "model_sha256": "d545bb50b8292be5e20845abe12df39d855056f74428c1d365673c5a856e1ebf",
+  "input_shape": [
+    1,
+    150,
+    150,
+    3
+  ],
+  "runtime": "tensorflow 2.20.0",
+  "python": "3.13.5",
+  "note": "ESP32-S3 on-device inference time (about 497 ms) was measured separately on the board; the PC time above is not comparable."
+}
