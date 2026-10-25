@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Camera-Based Parking Slot Occupancy Detection on an ESP32-S3 Using an INT8 TinyML CNN</title>
+<style>
+  @page { size: Letter; margin: 0.65in 0.6in 0.7in 0.6in; }
+  * { box-sizing: border-box; }
+  body { font-family: "Times New Roman", Times, serif; font-size: 9.6pt; line-height: 1.26; color: #000; margin: 0; }
+  .title { text-align: center; margin-bottom: 8pt; }
+  .title h1 { font-size: 19pt; line-height: 1.12; font-weight: bold; margin: 0 0 8pt; }
+  .authors { display: flex; justify-content: center; gap: 16pt; flex-wrap: wrap; font-size: 10pt; }
+  .authors div { text-align: center; }
+  .authors i { font-size: 8.6pt; display: block; }
+  .affil { font-size: 8.8pt; margin-top: 6pt; font-style: italic; }
+  .abs { margin: 8pt 0 6pt; text-align: justify; font-weight: bold; font-size: 9pt; }
+  .abs span { font-weight: bold; font-style: italic; }
+  .kw { margin: 0 0 8pt; text-align: justify; font-weight: bold; font-size: 9pt; }
+  .cols { column-count: 2; column-gap: 0.25in; text-align: justify; hyphens: auto; }
+  h2 { font-size: 9.6pt; text-transform: uppercase; text-align: center; margin: 9pt 0 3pt; font-weight: normal; letter-spacing: .02em; break-after: avoid; }
+  h3 { font-size: 9.6pt; font-style: italic; font-weight: normal; margin: 6pt 0 2pt; break-after: avoid; }
+  p { margin: 0 0 4.5pt; text-indent: 0.16in; }
+  p.ni, .cols > p:first-of-type { text-indent: 0; }
+  ul, ol { margin: 0 0 5pt; padding-left: 0.2in; }
+  li { margin-bottom: 1.5pt; }
+  figure { margin: 5pt 0 7pt; break-inside: avoid; text-align: center; }
+  figure img { max-width: 100%; }
+  figcaption, .tcap { font-size: 8.3pt; text-align: justify; margin-top: 2pt; }
+  .tcap { text-align: center; text-transform: none; margin: 6pt 0 2pt; font-size: 8.3pt; break-after: avoid; }
+  table { border-collapse: collapse; width: 100%; font-size: 8.2pt; margin-bottom: 6pt; break-inside: avoid; }
+  th, td { border-top: 0.6pt solid #000; border-bottom: 0.6pt solid #000; padding: 1.5pt 3pt; text-align: left; vertical-align: top; }
+  th { border-bottom: 0.9pt solid #000; }
+  td.n, th.n { text-align: right; }
+  .wide { column-span: all; }
+  code { font-family: "Courier New", monospace; font-size: 8.2pt; }
+  .eq { text-align: center; margin: 3pt 0 5pt; font-style: italic; text-indent: 0; }
+  .refs { font-size: 8.3pt; text-align: left; }
+  .refs ol { padding-left: 0.28in; }
+  .refs li { margin-bottom: 2pt; text-align: justify; }
+</style>
+</head>
+<body>
+
+<div class="title">
+  <h1>Camera-Based Parking Slot Occupancy Detection on an ESP32-S3 Using an INT8 TinyML CNN</h1>
+  <div class="authors">
+    <div>Druva Teja<i>CB.SC.U4CSE23317</i></div>
+    <div>Sai Jeevan<i>CB.SC.U4CSE23124</i></div>
+    <div>Manish Sakamuri<i>CB.SC.U4CSE23125</i></div>
+    <div>Tejeswara D<i>CB.SC.U4CSE23614</i></div>
+  </div>
+  <div class="affil">Group 79, Department of Computer Science and Engineering, Amrita School of Computing,<br>Amrita Vishwa Vidyapeetham, Coimbatore, India. Project guide: Dr. R. Karthi</div>
+</div>
+
+<div class="abs"><span>Abstract</span>&mdash;Most smart-parking prototypes either wire a sensor to every slot or push camera frames to something much bigger than a microcontroller. We wanted to see how far a single low-cost camera node could go on its own. This paper describes a parking-slot occupancy classifier that runs entirely on an ESP32-S3 with an OV3660 camera. A 25,730-parameter convolutional network, trained on the public CNRPark+EXT patches and quantized to INT8, shrinks to 33.24 KB and executes under TensorFlow Lite Micro. On the full CNRPark+EXT test split of {{n}} patches the INT8 model reaches {{int8_acc_pct}} accuracy (Keras float model: {{float_acc_pct}}), and the board reports a prediction through its own Wi-Fi dashboard in about 497 ms per image. We also test how the model copes with small camera shifts, rotation and lighting changes, since a pole-mounted camera will not stay perfectly still; rotation turns out to be its weak spot. We are equally open about what does not work yet: the prototype classifies a whole frame rather than individual slots, it was not trained on our own campus lot, and it can mistake people for cars. We describe those gaps and the slot-allocation and LoRa back end we plan to build on top.</div>
+<div class="kw"><span style="font-style:italic">Keywords</span>&mdash;smart parking, TinyML, ESP32-S3, INT8 quantization, convolutional neural network, edge computing, occupancy detection</div>
+
+<div class="cols">
+
+<h2>I. Introduction</h2>
+<p>Finding a free space in a busy lot wastes time and fuel, and the queue that builds at the entrance makes the problem worse for everyone. Many campuses and malls already have the physical layout for a smarter system; what they lack is a cheap way to know which slots are actually free.</p>
+<p>The usual answers each have a cost. Per-slot ultrasonic or infrared sensors are accurate but need wiring and maintenance at every bay. Camera systems need far fewer devices, but published designs typically lean on a Jetson-class board or a server running a detector such as YOLO, and cloud-hosted versions stop working when the network does. Our goal was narrower and more practical: put the decision <em>on the camera node itself</em>, using an inexpensive off-the-shelf microcontroller board, and see how accurate it can be.</p>
+<p>This paper makes three contributions:</p>
+<ol>
+<li>A complete, reproducible pipeline from a Keras CNN to an INT8 TensorFlow Lite Micro model running on an ESP32-S3, including the camera preprocessing that has to be redone by hand on the device.</li>
+<li>An evaluation on all {{n}} CNRPark+EXT test patches that compares the float and INT8 models, breaks accuracy down by weather and camera viewpoint, and measures sensitivity to small camera shifts and brightness changes.</li>
+<li>A plain account of the prototype&rsquo;s limits, together with the allocation and wrong-parking logic that we have designed but not yet implemented.</li>
+</ol>
+<p>All code, the model, the sample outputs and the demo videos are in the project repository (Section VII).</p>
+
+<h2>II. Related Work</h2>
+<p><b>Sensor-based systems.</b> A common design reads one infrared or ultrasonic sensor per slot with a microcontroller and forwards the result to a cloud service. A GIEST 2024 prototype combines IR sensors, an ATmega2560 and an ESP32 that reports to the Blynk cloud, and adds LED strips for indoor guidance [1]. Lubis et al. pair ultrasonic sensors and ESP32 boards with Firebase and then use Faster R-CNN with EasyOCR to check that a reservation matches the plate and slot marker; they report 86% detection accuracy and a 2.7 s average inference-plus-extraction time [2]. These systems work, but wiring grows with the number of slots.</p>
+<p><b>Vision on edge hardware.</b> Rajesh et al. monitor a lot with one infrastructure camera, run the detector on an edge computer to avoid latency, and guide drivers to the nearest free spot [3]. Kim et al. run SSD-MobileNetv2 on a low-cost edge device fed by several IP cameras and add a dual-trigger scheme, periodic plus a parking-space-mask trigger, so the model runs only when the scene changes; they report 0.32 s per frame and an F1-score of 0.9848 over a four-month field test [4]. Alymani et al. combine plate recognition at the gate with slot cameras and infrared sensors [5]. Our work sits at the smaller end of this range: a model that fits on a microcontroller rather than an edge computer.</p>
+<p><b>Allocation.</b> Beyond detection, some papers decide <em>which</em> slot to give a driver. Thomas and Kovoor use a genetic algorithm to pick a parking region and an autonomous trolley to park the car [6]; Sakib et al. propose an eco-friendly management scheme in which allocation accounts for emissions and driver priority [7]. We take inspiration from these when describing our planned allocation score in Section VI.</p>
+<p><b>Datasets and TinyML.</b> PKLot [8] and CNRPark+EXT [9] are the two public parking-occupancy datasets we know of with per-space labels. We use CNRPark+EXT because its 150&times;150 patches are already cropped per slot and labelled. For deployment we rely on TensorFlow Lite Micro [10] and on the integer-only quantization scheme of Jacob et al. [11].</p>
+
+<div class="wide">
+<div class="tcap">TABLE I. HOW THIS WORK DIFFERS FROM THE CLOSEST PUBLISHED SYSTEMS (AS DESCRIBED IN THEIR ABSTRACTS)</div>
+<table>
+<tr><th>Work</th><th>Sensing</th><th>Compute at the node</th><th>Stated limit / difference</th></tr>
+<tr><td>GIEST 2024 [1]</td><td>IR per slot</td><td>ATmega2560 + ESP32</td><td>Wired sensor per slot; no vision</td></tr>
+<tr><td>Lubis et al. [2]</td><td>Ultrasonic + phone photos</td><td>ESP32 + server-side Faster R-CNN, OCR</td><td>86% detection, 2.7 s; needs uploaded photos</td></tr>
+<tr><td>Rajesh et al. [3]</td><td>One infrastructure camera</td><td>Edge computer, YOLO-class detector</td><td>Far heavier than a microcontroller</td></tr>
+<tr><td>Kim et al. [4]</td><td>IP cameras</td><td>Edge device, SSD-MobileNetv2</td><td>0.32 s/frame, F1 0.9848 (field)</td></tr>
+<tr><td><b>This work</b></td><td>OV3660 on the board</td><td><b>ESP32-S3, 33 KB INT8 CNN</b></td><td>~497 ms/image; CNR-EXT only, no campus field data yet</td></tr>
+</table>
+</div>
+
+<h2>III. System Design</h2>
+<h3>A. Hardware</h3>
+<p>The node is an ESP32-S3-WROOM-1 N16R8 development board (dual-core 240 MHz, 8 MB PSRAM, 16 MB flash) with an OV3660 camera module attached directly to the board. We first bought a generic ESP32-S3 DevKit and discovered that it has no flat-cable camera connector, so the ESP32-CAM sensor could not be reused; switching to a board with the camera built in fixed this. The internal SRAM is only about 512 KB, which matters later.</p>
+
+<h3>B. Network architecture</h3>
+<p>Fig. 1 shows the CNN. It has three 3&times;3 convolution blocks with 16, 32 and 64 filters, two max-pooling layers, global average pooling in place of a flatten layer, a 32-unit dense layer, dropout of 0.3 and a two-way softmax. The total is 25,730 parameters, about 100.5 KB as 32-bit floats. Global average pooling is the key size saver: a flatten layer after the last convolution would have multiplied the dense-layer weights many times over.</p>
+</div>
+
+<figure class="wide"><img src="figures/fig_cnn.png" style="width:88%"><figcaption>Fig. 1. The classifier. Convolution layers are outlined in maroon.</figcaption></figure>
+
+<div class="cols">
+<h3>C. Data and training</h3>
+<p>CNRPark+EXT provides 150&times;150 RGB patches, one parking space per patch, labelled 0 (empty) or 1 (occupied), with predefined train, validation and test lists. The lists contain 94,493, 18,647 and 31,825 images respectively. To keep early experiments quick we trained on a class-balanced random subset of 20,000 training images (10,000 per class, seed 42) and evaluated on the untouched validation and test lists. Training used Adam (learning rate 0.001), batch size 32, up to 20 epochs with early stopping on validation loss (patience 4), and light augmentation&mdash;rotation up to &plusmn;0.03 turn (about &plusmn;11&deg;), translation and zoom up to 3% and brightness change up to 10%&mdash;chosen to mimic a camera that has drifted slightly. Pixels are scaled to [0, 1].</p>
+<p>The Keras model reached 98.11% on the test list in our training run; Section IV re-measures it (slightly differently, because of image-loading details). A 96&times;96 variant trained the same way reached 98.25%, but we deployed the 150&times;150 model because its input matches the stored patches and the memory cost was acceptable.</p>
+
+<h3>D. INT8 quantization</h3>
+<p>We used post-training full-integer quantization with the TensorFlow Lite converter. A representative set of 500 randomly chosen patches calibrated activation ranges; input and output tensors are INT8. A pixel <i>x</i> in [0, 1] is stored as <i>q = round(x/s) + z</i> with the input scale and zero point read from the model, and the two outputs are converted back with <i>x = (q &minus; z)s</i> before taking the larger. The result is a 34,040-byte file (33.24 KB), about a third of the float size. The calibration set was drawn from the full patch folder without excluding test images; it is only used to set ranges, not to train, but we note it for completeness.</p>
+
+<h3>E. On-device pipeline</h3>
+<p>The model is embedded in the firmware as a C array and executed with TensorFlow Lite Micro using a handful of operators (convolution, pooling, mean, fully connected, softmax, reshape, quantize and dequantize). Fig. 2 shows what happens at runtime. This is where most of our debugging time went. The camera delivers RGB565 frames at 320&times;240; the training images were 8-bit RGB, so each frame is resized to 150&times;150 and every pixel expanded to RGB888 by hand before quantizing. The tensor arena is 600 KB and is placed in PSRAM; our first attempt in internal RAM failed with a request for 469,136 bytes against about 151,000 available. An old community TensorFlow library also failed to compile against the newer API, so we switched to Espressif&rsquo;s own TFLite Micro port.</p>
+</div>
+
+<figure class="wide"><img src="figures/fig_pipeline.png" style="width:96%"><figcaption>Fig. 2. Runtime pipeline on the ESP32-S3.</figcaption></figure>
+
+<div class="cols">
+<p>For the demo the board captures and classifies one frame every 30 s and serves the result from its own Wi-Fi access point at 192.168.4.1: the latest image, the label, the two class probabilities, and capture and inference times.</p>
+
+<h2>IV. Experiments and Results</h2>
+<h3>A. Float versus INT8</h3>
+<p>We ran the float Keras model and the INT8 TFLite model (with the same quantize-run-dequantize steps as the firmware) over all {{n}} test patches. Table II shows that quantization cost very little: the INT8 model scores {{int8_acc_pct}} against {{float_acc_pct}} for float, and the two models agree on {{agree_pct}} of patches. Precision, recall and F1 for the occupied class are {{prec_pct}}, {{rec_pct}} and {{f1_pct}} (Fig. 3).</p>
+</div>
+
+<div class="wide" style="display:flex; gap:0.3in; align-items:flex-start; margin-bottom:4pt;">
+  <div style="flex:1.15">
+    <div class="tcap">TABLE II. TEST-SPLIT RESULTS ({{n}} PATCHES)</div>
+    <table>
+      <tr><th>Model</th><th class="n">Size</th><th class="n">Accuracy</th></tr>
+      <tr><td>Keras float32</td><td class="n">~100.5 KB</td><td class="n">{{float_acc_pct}}</td></tr>
+      <tr><td>TFLite INT8</td><td class="n">33.24 KB</td><td class="n">{{int8_acc_pct}}</td></tr>
+      <tr><td>Float/INT8 agreement</td><td class="n">&ndash;</td><td class="n">{{agree_pct}}</td></tr>
+    </table>
+    <p class="ni" style="font-size:8.3pt; text-align:justify">Errors of the INT8 model: {{fp}} empty patches called occupied ({{fpr_pct}} of empty) and {{fn}} occupied patches called empty ({{fnr_pct}} of occupied).</p>
+  </div>
+  <figure style="flex:1; margin:0"><img src="figures/fig_confusion.png" style="width:78%"><figcaption>Fig. 3. Confusion matrix, INT8 model, full test split.</figcaption></figure>
+</div>
+
+<div class="cols">
+<h3>B. Weather and viewpoint</h3>
+<p>CNRPark+EXT contains sunny, overcast and rainy days and nine camera viewpoints. Fig. 4 splits the INT8 accuracy by both. {{weather_sentence}} {{camera_sentence}} This is still the same dataset family the model was trained on, so it says little about a completely new lot.</p>
+</div>
+
+<figure class="wide"><img src="figures/fig_groups.png" style="width:90%"><figcaption>Fig. 4. INT8 accuracy by weather condition and camera viewpoint on the test split.</figcaption></figure>
+
+<div class="cols">
+<h3>C. Robustness to camera movement and lighting</h3>
+<p>Our guide asked that the system tolerate a camera that moves slightly with wind or maintenance. We could not physically bump a camera hundreds of times, so we applied synthetic perturbations to a fixed random subset of {{robust_n}} test patches and re-ran the INT8 model: a 10-pixel horizontal or vertical shift, a 5&deg; rotation, a 10% zoom-in crop, and brightness scaled by 0.6 and 1.4. Table III gives the results. {{robust_sentence}}</p>
+</div>
+
+<div class="wide" style="width:62%; margin:0 auto;">
+<div class="tcap">TABLE III. INT8 ACCURACY UNDER SYNTHETIC CAMERA AND LIGHTING CHANGES ({{robust_n}} PATCHES)</div>
+<table>
+<tr><th>Perturbation</th><th class="n">Accuracy</th><th class="n">Change</th></tr>
+{{ROBUST_ROWS}}
+</table>
+</div>
+
+<div class="cols">
+<h3>D. On-device behaviour</h3>
+<p>On the ESP32-S3 a classification takes about 497 ms and is nearly constant from frame to frame, because the network does the same arithmetic every time. The first camera capture after boot takes about 300 ms while the sensor settles, and later captures about 7 ms. The model plus runtime fit comfortably: one of our test sketches used 29% of program storage and 53% of dynamic memory with a 150 KB arena in internal RAM (it later moved to PSRAM). Compared with the 0.32 s per frame that Kim et al. report on a larger edge device [4], half a second on a microcontroller is acceptable for a status that changes over minutes, and the dashboard refreshes only every 30 s anyway.</p>
+
+</div>
+<figure class="wide"><img src="figures/fig_samples.png" style="width:78%"><figcaption>Fig. 5. Predictions of the deployed INT8 model on sample CNRPark+EXT test patches (green titles are correct; the label and probability are shown).</figcaption></figure>
+<div class="cols">
+<h2>V. Discussion and Limitations</h2>
+<p>We would rather list what is still wrong than have a reader find it.</p>
+<p><b>The numbers are benchmark numbers.</b> {{int8_acc_pct}} describes performance on CNRPark+EXT patches. We have not yet collected and labelled a set from our own campus lot, so we cannot claim that accuracy for our deployment. Fig. 5 shows deployed-model predictions on sample patches; campus photos are in the repository but were used only for trial runs.</p>
+<p><b>Whole frame instead of slots.</b> The model learned from patches that each show a single space, but the demo firmware resizes the entire 320&times;240 frame to 150&times;150. In practice a person or a bag in view was sometimes labelled occupied. Cropping a fixed region of interest per slot before inference is the obvious fix, and we expect it to matter more than any change to the network. A temporal rule, such as requiring two or three identical predictions in a row, would also steady the output.</p>
+<p><b>Training-data balance.</b> The training subset contains cars and empty ground but no people, animals or luggage, so the model has no reason to call those &ldquo;empty&rdquo;. Whether they should count as occupied is a policy choice we still need to make and label for.</p>
+<p><b>Power.</b> The dashboard worked when the board was plugged into a laptop but not reliably from a power bank, which points to a supply or brown-out reset problem rather than a software one. We have not isolated it yet.</p>
+<p><b>Synthetic perturbations and tilt.</b> Shifting or rotating a patch is not the same as moving a real camera, which changes perspective and what the patch contains. Table III is a sanity check, not a substitute for field testing. The sharp drop under rotation is the result that worries us most, because wind-induced tilt is exactly the case our guide described. Retraining with rotated inputs that keep their borders, and testing on real tilted captures, are priorities.</p>
+
+<h2>VI. Planned Slot Allocation and Back End</h2>
+<p>The occupancy node is the foundation; the rest of the system is designed but not yet implemented, and we label it that way deliberately. Fig. 6 shows the intended architecture: several camera nodes send compact occupancy vectors over LoRa to a Raspberry Pi 3A+ that stores state in SQLite, generates a dynamic entry QR code, assigns a slot, sends the driver a web page and SMS, and syncs to a cloud database when a connection is available.</p>
+</div>
+
+<figure class="wide"><img src="figures/fig_system.png" style="width:80%"><figcaption>Fig. 6. Planned system architecture. Only the camera node (left) is implemented.</figcaption></figure>
+
+<div class="cols">
+<p>For each free slot <i>s</i> the allocation engine will compute</p>
+<div class="eq">Score(s) = w<sub>1</sub>D<sub>e</sub>(s) + w<sub>2</sub>D<sub>l</sub>(s) + w<sub>3</sub>(&rho;<sub>r</sub> + &alpha;T<sub>r</sub>)</div>
+<p class="ni">and choose the slot with the lowest score. Here D<sub>e</sub> and D<sub>l</sub> are normalised distances to the entrance and to the nearest lift, &rho;<sub>r</sub> is the occupancy ratio of the slot&rsquo;s row, T<sub>r</sub> counts recent allocations in that row, and the weights sum to 1. The last term stops consecutive cars being sent to the same row, which is what causes congestion inside a lot. To catch drivers who park in the wrong place we plan a time-window check: when a slot is assigned the system expects it to become occupied within a few minutes; if a different, unassigned slot fills instead, the entry is matched to it by timestamp and the driver is asked by SMS to confirm. These ideas are not yet evaluated, and we make no accuracy claims about them.</p>
+
+<h2>VII. Reproducibility</h2>
+<p>The repository contains the firmware sketches, training and conversion scripts, the INT8 model, the C array, 60 sample patches, the demo videos, and two scripts: <code>demo/run_demo.py</code> regenerates the sample outputs and the full-test metrics, and <code>demo/analysis.py</code> regenerates the float-versus-INT8, weather, camera and robustness tables in this paper. The repository is at github.com/ballsycodes/Automated-Slot-Allocated-Smart-Parking-System.</p>
+
+<h2>VIII. Conclusion</h2>
+<p>A 33 KB INT8 convolutional network is enough to classify parking-slot patches with about {{int8_acc_pct}} accuracy on a public benchmark, and an ESP32-S3 can run it in roughly half a second without any server. Quantization cost almost nothing in accuracy, and the model tolerated small synthetic shifts and brightness changes, although a 5&deg; rotation cut accuracy sharply. The distance between that and a working parking system is still real: per-slot cropping, retraining on our own lot, resolving the power issue, and building the LoRa, allocation and notification layers. Those are our next steps, in that order.</p>
+
+<h2 style="margin-top:8pt">Acknowledgment</h2>
+<p class="ni">We thank our guide, Dr. R. Karthi, for pushing us to ask what happens when the camera moves, and the CNRPark+EXT authors for releasing their data.</p>
+
+<h2>References</h2>
+<div class="refs"><ol>
+<li>D. Bhatnagar, V. Soni, and P. Agrawal, &ldquo;IoT-enabled smart car parking system with route navigation,&rdquo; in <i>Proc. 2024 IEEE 1st Int. Conf. Green Industrial Electronics and Sustainable Technologies (GIEST)</i>, Oct. 2024, pp. 1&ndash;5, doi: 10.1109/GIEST62955.2024.10959768.</li>
+<li>F. Lubis, E. B. Nababan, P. I. Nainggolan, M. F. S. Putra, R. Sulaiman, R. F. Rahmat, and A. L. T. Pangaribuan, &ldquo;Integrated smart parking system using Internet of Things (IoT) and digital image processing with Faster R-CNN and OCR,&rdquo; in <i>Proc. 2024 8th Int. Conf. Electrical, Telecommunication and Computer Engineering (ELTICOM)</i>, 2024, pp. 342&ndash;348, doi: 10.1109/ELTICOM64085.2024.10864954.</li>
+<li>P. Rajesh, D. Kallakuri, S. Chagarlamudi, S. M. Vissavajhula, J. Meng, and J. Zhao, &ldquo;Intelligent parking guidance system using computer vision, IoT, and edge computing,&rdquo; <i>IEEE Open J. Intell. Transp. Syst.</i>, vol. 6, pp. 1185&ndash;1199, 2025, doi: 10.1109/OJITS.2025.3605318.</li>
+<li>J. Kim, I. Jeong, J. Jung, and J. Cho, &ldquo;Resource-efficient design and implementation of real-time parking monitoring system with edge device,&rdquo; <i>Sensors</i>, vol. 25, no. 7, p. 2181, 2025, doi: 10.3390/s25072181.</li>
+<li>M. Alymani, L. A. Almoqhem, D. A. Alabdulwahab, A. A. Alghamdi, H. Alshahrani, and K. Raza, &ldquo;Enabling smart parking for smart cities using Internet of Things (IoT) and machine learning,&rdquo; <i>PeerJ Comput. Sci.</i>, vol. 11, p. e2544, 2025, doi: 10.7717/peerj-cs.2544.</li>
+<li>D. Thomas and B. C. Kovoor, &ldquo;A genetic algorithm approach to autonomous smart vehicle parking system,&rdquo; <i>Procedia Comput. Sci.</i>, vol. 125, pp. 68&ndash;76, 2018, doi: 10.1016/j.procs.2017.12.011.</li>
+<li>N. Sakib, A. S. M. Bakibillah, S. Susilawati, M. A. S. Kamal, and K. Yamada, &ldquo;Eco-friendly smart car parking management system with enhanced sustainability,&rdquo; <i>Sustainability</i>, vol. 16, no. 10, p. 4145, 2024, doi: 10.3390/su16104145.</li>
+<li>P. R. L. de Almeida, L. S. Oliveira, A. S. Britto Jr., E. J. Silva Jr., and A. L. Koerich, &ldquo;PKLot&ndash;A robust dataset for parking lot classification,&rdquo; <i>Expert Syst. Appl.</i>, vol. 42, no. 11, pp. 4937&ndash;4949, 2015.</li>
+<li>G. Amato, F. Carrara, F. Falchi, C. Gennaro, C. Meghini, and C. Vairo, &ldquo;Deep learning for decentralized parking lot occupancy detection,&rdquo; <i>Expert Syst. Appl.</i>, vol. 72, pp. 327&ndash;334, 2017.</li>
+<li>R. David <i>et al.</i>, &ldquo;TensorFlow Lite Micro: Embedded machine learning for TinyML systems,&rdquo; in <i>Proc. Machine Learning and Systems (MLSys)</i>, vol. 3, 2021, pp. 800&ndash;811.</li>
+<li>B. Jacob <i>et al.</i>, &ldquo;Quantization and training of neural networks for efficient integer-arithmetic-only inference,&rdquo; in <i>Proc. IEEE/CVF Conf. Computer Vision and Pattern Recognition (CVPR)</i>, 2018, pp. 2704&ndash;2713.</li>
+</ol></div>
+
+</div>
+</body>
+</html>
